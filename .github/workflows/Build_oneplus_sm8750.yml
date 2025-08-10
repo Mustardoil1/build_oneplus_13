@@ -45,7 +45,11 @@ on:
          default: false
          type: boolean
       
-       
+      enable_kpm:
+        description: "是否启用KPM (true/false)"
+        required: true
+        default: "true"
+        type: boolean
 
 
 jobs:
@@ -347,6 +351,13 @@ jobs:
          rm -rf ./sched_ext/.git
          cd common/kernel/sched  
 
+      - name: Enable KPM if selected
+        if: ${{ github.event.inputs.enable_kpm == 'true' }}
+        run: |
+          echo "启用 KPM..."
+          echo "CONFIG_KPM=y" >> kernel_workspace/kernel_platform/common/arch/arm64/configs/gki_defconfig
+          sudo sed -i 's/check_defconfig//' kernel_workspace/kernel_platform/common/build.config.gki
+          
       - name: 🔨 Build Kernel (构建内核)
         run: |
           export PATH="/usr/lib/ccache:$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/prebuilts/clang/host/linux-x86/clang-r510928/bin:$PATH"          
