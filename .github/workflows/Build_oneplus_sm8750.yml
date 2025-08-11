@@ -44,13 +44,12 @@ on:
          required: false
          default: false
          type: boolean
-      
-      enable_kpm:
-        description: "是否启用KPM (true/false)"
-        required: true
-        default: "true"
+    
+      enable_kpm_patch:
+        description: "是否修补KPM（勾选则生成带KPM的内核）"
+        required: false
+        default: true
         type: boolean
-
 
 jobs:
   build:
@@ -350,14 +349,7 @@ jobs:
          cp -r ./sched_ext/* ./common/kernel/sched
          rm -rf ./sched_ext/.git
          cd common/kernel/sched  
-
-      - name: Enable KPM if selected
-        if: ${{ github.event.inputs.enable_kpm == 'true' }}
-        run: |
-          echo "启用 KPM..."
-          echo "CONFIG_KPM=y" >> kernel_workspace/kernel_platform/common/arch/arm64/configs/gki_defconfig
-          sudo sed -i 's/check_defconfig//' kernel_workspace/kernel_platform/common/build.config.gki
-          
+    
       - name: 🔨 Build Kernel (构建内核)
         run: |
           export PATH="/usr/lib/ccache:$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/prebuilts/clang/host/linux-x86/clang-r510928/bin:$PATH"          
@@ -374,6 +366,33 @@ jobs:
           echo "只要本步骤没有意外退出就是在编译中"
           echo "请耐心等待...."
           make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="ccache clang" RUSTC=../../prebuilts/rust/linux-x86/1.73.0b/bin/rustc PAHOLE=../../prebuilts/kernel-build-tools/linux-x86/bin/pahole LD=ld.lld HOSTLD=ld.lld O=out KCFLAGS+=-O2  Image > /dev/null 2>&1
+
+      - name: 🛠 Apply KPM Patch (应用KPM修补)
+        if: ${{ inputs.enable_kpm_patch }}
+        run: |
+          echo "开始KPM修补..."
+          cd kernel_workspace/kernel_platform/common/out/arch/arm64/boot
+          curl -LO https://github.com/SukiSU-Ultra/SukiSU_KernelPatch_patch/releases/download/0.12.0/patch_linux
+          chmod +x patch_linux
+          ./patch_linux
+          
+          # 验证修补结果
+          if [ -f "oImage" ]; then
+            echo "✅ KPM修补成功，替换原始Image"
+            rm -f Image
+            mv oImage Image
+          else
+            echo "⚠️ 警告：KPM修补未生成oImage文件"
+          fi
+          
+      - name: ⚙️ Set KPM status (设置KPM状态)
+        run: |
+          if [ "${{ inputs.enable_kpm_patch }}" = "true" ]; then
+            echo "KPM_STATUS=KPM" >> $GITHUB_ENV
+          else
+            echo "KPM_STATUS=NoKPM" >> $GITHUB_ENV
+          fi
+          echo "KPM状态: $KPM_STATUS"
        
       - name: 📦 Make AnyKernel3 (创建Anykernel3)
         run: |
@@ -385,5 +404,6 @@ jobs:
       - name: 📤 Upload AnyKernel3 (上传 Anykernel3)
         uses: actions/upload-artifact@v4
         with:
-         name: AK3_${{ env.KSUVER }}_${{ env.DEVICES_NAME }}_SuKiSU
-         path: ./AnyKernel3/*
+          #..
+          name: AK3_${{ env.KPM_STATUS }}_${{ env.KSUVER }}_${{ env.DEVICES_NAME }}_SuKiSU
+          path: ./AnyKernel3/*
